@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(email) {
+      return isSignedIn() && request.auth.token.email == email && request.auth.token.email_verified == true;
+    }
+
+    // Validation for User entity
+    function isValidUser(data) {
+      return data.keys().hasAll(['ativo', 'criado_em']) &&
+             data.keys().size() == 2 &&
+             data.ativo is bool &&
+             data.criado_em is timestamp;
+    }
+
+    match /usuarios/{email} {
+      // Typically, for a dashboard/admin setup, only the owner could read their own data.
+      // However, since this is a webhook-created collection, we restrict reads to owners.
+      allow get: if isOwner(email);
+      
+      // Writes (create/update/delete) are forbidden via client SDK 
+      // because we handle them exclusively through the Firebase Admin SDK (Server-side).
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and activation status",
+      "type": "object",
+      "properties": {
+        "ativo": {
+          "type": "boolean",
+          "description": "Whether the user account is active"
+        },
+        "criado_em": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["ativo", "criado_em"]
+    }
+  },
+  "firestore": {
+    "/usuarios/{email}": {
+      "schema": "User",
+      "description": "User documents keyed by email"
+    }
+  }
+}
