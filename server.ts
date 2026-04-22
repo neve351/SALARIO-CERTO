@@ -48,6 +48,28 @@ async function startServer() {
 
   app.use(express.json());
 
+  // API Route: List Users (Admin only - simplified for now)
+  app.get("/api/users", async (req, res) => {
+    if (!serviceAccount || !db) {
+      return res.status(500).json({ error: "Serviço de banco de dados não configurado" });
+    }
+    
+    try {
+      const dbInstance = admin.firestore(appInstance);
+      const snapshot = await dbInstance.collection("usuarios").get();
+      
+      let users: any[] = [];
+      snapshot.forEach(doc => {
+        users.push(doc.data());
+      });
+
+      res.status(200).json(users);
+    } catch (error) {
+      console.error("Erro ao carregar usuários:", error);
+      res.status(500).json({ error: "Erro ao buscar lista de usuários" });
+    }
+  });
+
   // API Route: Webhook
   app.post("/api/webhook", async (req, res) => {
     const data = req.body;
@@ -78,6 +100,7 @@ async function startServer() {
           await db.collection("usuarios").doc(email).set({
             ativo: true,
             plano: "pro",
+            renovacao: Date.now(),
             atualizado_em: new Date()
           }, { merge: true });
 

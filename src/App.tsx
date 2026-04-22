@@ -1212,7 +1212,177 @@ function DashboardPage({
   );
 }
 
-function HomePage() {
+function TrialCountdown({ daysRemaining }: { daysRemaining: number }) {
+  const [opacity, setOpacity] = useState(1);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOpacity((prev) => (prev === 1 ? 0.6 : 1));
+    }, 800);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isLastDays = daysRemaining <= 2;
+
+  return (
+    <div 
+      id="trialBox" 
+      style={{ opacity, backgroundColor: isLastDays ? '#ef4444' : '#facc15', color: isLastDays ? 'white' : 'black' }}
+      className={`p-3 rounded-xl mt-4 text-center font-bold text-xs sm:text-sm shadow-lg transition-all duration-300 ${isLastDays ? 'shadow-red-400/20' : 'shadow-yellow-400/20'}`}
+    >
+      {isLastDays ? (
+        <>
+          ⏳ Seu teste está acabando…<br />
+          <span className="text-[10px] opacity-80 uppercase tracking-widest">Quer continuar usando?</span><br />
+          👉 Apenas R$ 9,90/mês
+        </>
+      ) : (
+        <>
+          👷‍♂️ Você ganhou 7 dias grátis!<br />
+          <span className="text-[10px] opacity-80 uppercase tracking-widest">Faltam {Math.ceil(daysRemaining)} dias</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AdminPage() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) throw new Error("Falha ao carregar usuários");
+        const data = await res.json();
+        setUsers(data);
+
+        // Stats calculation as requested
+        let total = data.length;
+        let pro = data.filter((u: any) => u.plano === "pro").length;
+        console.log("Total:", total);
+        console.log("Pagantes:", pro);
+
+      } catch (err) {
+        console.error(err);
+        setError("Erro ao carregar lista de usuários. Verifique se você tem permissão.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  const totalCount = users.length;
+  const proCount = users.filter((u: any) => u.plano === "pro").length;
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 p-6 sm:p-10 font-sans">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-purple-500/10 rounded-2xl border border-purple-500/20">
+              <ShieldCheck className="w-6 h-6 text-purple-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight">Painel Admin</h1>
+              <p className="text-slate-400 text-sm">Gerenciamento de usuários e planos</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Voltar
+          </button>
+        </div>
+
+        {/* Stats Summary Section */}
+        {!loading && !error && (
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="bg-slate-900/50 border border-white/5 p-6 rounded-[28px] backdrop-blur-sm">
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Total Usuários</p>
+              <h2 className="text-3xl font-black text-white">{totalCount}</h2>
+            </div>
+            <div className="bg-purple-500/10 border border-purple-500/20 p-6 rounded-[28px] backdrop-blur-sm">
+              <p className="text-purple-400/60 text-[10px] font-black uppercase tracking-widest mb-1">Assinantes PRO</p>
+              <h2 className="text-3xl font-black text-purple-400">{proCount}</h2>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <Loader2 className="w-10 h-10 text-purple-500 animate-spin" />
+            <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Carregando usuários...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-3xl text-center">
+            <p className="text-red-400 font-bold">{error}</p>
+          </div>
+        ) : (
+          <div className="bg-slate-900/50 border border-white/5 rounded-[32px] overflow-hidden backdrop-blur-md">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/5">
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Usuário</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Plano</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u, idx) => (
+                    <motion.tr 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      key={u.id} 
+                      className="border-b border-white/5 hover:bg-white/5 transition-colors group"
+                    >
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400 group-hover:bg-purple-500 group-hover:text-white transition-all">
+                            {u.email[0].toUpperCase()}
+                          </div>
+                          <span className="text-sm font-bold text-slate-200">{u.email}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          u.plano === 'pro' 
+                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' 
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}>
+                          {u.plano || 'free'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-right">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[9px] font-black uppercase">
+                          <CheckCircle2 className="w-3 h-3" /> {u.ativo ? 'Ativo' : 'Inativo'}
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {users.length === 0 && (
+              <div className="p-20 text-center">
+                <p className="text-slate-500 font-bold italic">Nenhum usuário encontrado no sistema.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HomePage({ user, userPlan, trialDays }: { user: User | null, userPlan: string | null, trialDays: number | null }) {
   const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/webhook` : "/api/webhook";
   const navigate = useNavigate();
 
@@ -1291,9 +1461,61 @@ function HomePage() {
               <p className="text-center text-slate-500 text-[10px] sm:text-xs font-medium italic">
                 Sem necessidade de cadastro para o teste.
               </p>
+
+              {user && userPlan === "free" && trialDays !== null && trialDays > 0 && (
+                <TrialCountdown daysRemaining={trialDays} />
+              )}
+              
+              {!user && (
+                <div id="trialBox" className="bg-yellow-400 text-black p-3 rounded-xl mt-4 text-center font-bold text-xs sm:text-sm shadow-lg shadow-yellow-400/20">
+                  👷‍♂️ Ganhe 7 dias grátis no Salário Certo!<br />
+                  <span className="text-[10px] uppercase opacity-70">Liberação imediata pós-cadastro</span>
+                </div>
+              )}
             </div>
           </div>
         </motion.div>
+
+        {/* Pricing Section */}
+        <section className="mb-20 text-center">
+          <h2 className="text-2xl font-bold text-white mb-8">Escolha sua Tranquilidade</h2>
+          <div className="grid sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            <div className="p-8 rounded-[32px] bg-slate-900/40 border border-white/5">
+              <h3 className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mb-4">Teste Grátis</h3>
+              <div className="text-4xl font-black text-white mb-2">R$ 0</div>
+              <p className="text-slate-500 text-sm mb-6">Explore o painel por 7 dias</p>
+              <ul className="space-y-3 text-sm text-slate-300 mb-8">
+                <li className="flex items-center gap-2 justify-center">✔ Cálculos CLT</li>
+                <li className="flex items-center gap-2 justify-center">✔ Dashboard Visual</li>
+              </ul>
+              <button 
+                onClick={() => navigate("/login")}
+                className="w-full py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition-colors"
+              >
+                Ativar Trial
+              </button>
+            </div>
+            <div className="p-8 rounded-[32px] bg-purple-500/10 border border-purple-500/20 relative overflow-hidden group">
+              <div className="absolute top-4 right-4 px-2 py-1 bg-purple-500 text-white text-[8px] font-black uppercase rounded-lg">Popular</div>
+              <h3 className="text-purple-400 font-bold uppercase tracking-widest text-[10px] mb-4">Plano PRO</h3>
+              <div className="text-4xl font-black text-white mb-2">R$ 9,90<span className="text-sm font-medium text-slate-500">/mês</span></div>
+              <p className="text-slate-400 text-sm mb-6">Seu controle total garantido</p>
+              <ul className="space-y-3 text-sm text-slate-200 mb-8">
+                <li className="flex items-center gap-2 justify-center font-bold">💎 Acesso Vitalício Prioritário</li>
+                <li className="flex items-center gap-2 justify-center font-bold">📈 Histórico e Evolução</li>
+                <li className="flex items-center gap-2 justify-center font-bold">🤖 IA Corretora de Salário</li>
+              </ul>
+              <a 
+                href="https://pay.hotmart.com/SEULINK"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full py-4 rounded-xl bg-purple-500 text-white font-black hover:bg-purple-400 transition-all shadow-lg shadow-purple-500/20 no-underline"
+              >
+                Liberar Agora
+              </a>
+            </div>
+          </div>
+        </section>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
           <FeatureCard 
@@ -1324,6 +1546,7 @@ function HomePage() {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userPlan, setUserPlan] = useState<string | null>(null);
+  const [trialDays, setTrialDays] = useState<number | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
@@ -1332,16 +1555,32 @@ export default function App() {
         try {
           const userDoc = await getDoc(doc(db, "usuarios", currentUser.email));
           if (userDoc.exists()) {
-            setUserPlan(userDoc.data()?.plano || "free");
+            const data = userDoc.data();
+            setUserPlan(data?.plano || "free");
+            
+            // Trial Logic as requested: uses trial_inicio from DB if available
+            const trialStart = data?.trial_inicio 
+              ? (data.trial_inicio.toDate ? data.trial_inicio.toDate().getTime() : data.trial_inicio)
+              : new Date(currentUser.metadata.creationTime || new Date()).getTime();
+
+            const now = Date.now();
+            const diasDecorridos = (now - trialStart) / (1000 * 60 * 60 * 24);
+            const restantes = 7 - diasDecorridos;
+            
+            setTrialDays(Math.max(0, restantes));
+
           } else {
             setUserPlan("free");
+            setTrialDays(7); // Default trial for new signups not in DB yet
           }
         } catch (error) {
           console.error("Erro ao carregar plano:", error);
           setUserPlan("free");
+          setTrialDays(7);
         }
       } else {
         setUserPlan(null);
+        setTrialDays(null);
       }
       setUser(currentUser);
       setAuthLoading(false);
@@ -1444,7 +1683,7 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<HomePage user={user} userPlan={userPlan} trialDays={trialDays} />} />
         <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
         <Route path="/dashboard" element={
           <ProtectedRoute requirePro>
@@ -1484,6 +1723,11 @@ export default function App() {
         <Route path="/evolucao" element={
           <ProtectedRoute requirePro>
             <EvolucaoPage results={results} user={user} />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin" element={
+          <ProtectedRoute>
+            <AdminPage />
           </ProtectedRoute>
         } />
         <Route path="/historico.html" element={<Navigate to="/evolucao" replace />} />
