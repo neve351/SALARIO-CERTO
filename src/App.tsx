@@ -1281,12 +1281,12 @@ function DashboardPage({
                   Ver Guia <TrendingUp className="w-2.5 h-2.5" />
                 </button>
                 <a 
-                  href="https://app.cakto.com.br/checkout-builder/858949" 
+                  href="https://pay.kiwify.com.br/HU0rEsK" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="bg-purple-600 hover:bg-purple-500 text-white text-[9px] sm:text-[10px] font-black uppercase px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5"
                 >
-                  <Lock className="w-2.5 h-2.5" /> Liberar Acesso PRO
+                  <Lock className="w-2.5 h-2.5" /> 💳 Liberar Acesso PRO
                 </a>
               </div>
             </div>
@@ -1335,12 +1335,12 @@ function TrialCountdown({ daysRemaining }: { daysRemaining: number }) {
 
       {isLastDays && (
         <a 
-          href="https://app.cakto.com.br/checkout-builder/858949" 
+          href="https://pay.kiwify.com.br/HU0rEsK" 
           target="_blank" 
           rel="noopener noreferrer"
           className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-4 rounded-xl block text-center font-black uppercase tracking-widest text-xs shadow-xl shadow-purple-600/20 transition-all transform active:scale-95"
         >
-          Liberar Acesso PRO
+          💳 Liberar Acesso PRO
         </a>
       )}
     </div>
@@ -1544,19 +1544,32 @@ function HomePage({ user, userPlan, trialDays }: { user: User | null, userPlan: 
             
             <div className="relative z-10 space-y-4">
               <button 
-                onClick={() => navigate("/calculator")}
+                onClick={async () => {
+                  if (!user) {
+                    navigate("/login");
+                  } else {
+                    const hasAcesso = userPlan === "pro" || (trialDays !== null && (trialDays as number) > 0);
+                    if (hasAcesso) {
+                      navigate("/calculator");
+                    } else {
+                      // Se logado mas sem acesso, desloga para permitir novo login/teste
+                      await signOut(auth);
+                      navigate("/login");
+                    }
+                  }
+                }}
                 className="w-full bg-white text-purple-900 font-black py-4 sm:py-5 rounded-xl flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-xl text-sm sm:text-base outline-none"
               >
                 Testar Simulador Grátis
               </button>
 
               <a 
-                href="https://pay.hotmart.com/SEULINK"
+                href="https://pay.kiwify.com.br/HU0rEsK"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-4 sm:py-5 rounded-xl flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-600/20 text-sm sm:text-base no-underline"
               >
-                Liberar Acesso PRO
+                💳 Liberar Acesso PRO
               </a>
 
               <p className="text-center text-slate-500 text-[10px] sm:text-xs font-medium italic">
@@ -1607,12 +1620,12 @@ function HomePage({ user, userPlan, trialDays }: { user: User | null, userPlan: 
                 <li className="flex items-center gap-2 justify-center font-bold">🤖 IA Corretora de Salário</li>
               </ul>
               <a 
-                href="https://pay.hotmart.com/SEULINK"
+                href="https://pay.kiwify.com.br/HU0rEsK"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block w-full py-4 rounded-xl bg-purple-500 text-white font-black hover:bg-purple-400 transition-all shadow-lg shadow-purple-500/20 no-underline"
               >
-                Liberar Agora
+                💳 Liberar Agora
               </a>
             </div>
           </div>
@@ -1771,9 +1784,12 @@ export default function App() {
   const ProtectedRoute = ({ children, requirePro = false }: { children: ReactNode, requirePro?: boolean }) => {
     if (!user) return <Navigate to="/login" replace />;
     
-    if (requirePro && userPlan !== "pro") {
+    // Liberalize access: Allow PRO users OR users with remaining trial days
+    const hasAcesso = userPlan === "pro" || (trialDays !== null && trialDays > 0);
+
+    if (requirePro && !hasAcesso) {
       useEffect(() => {
-        alert("Plano PRO necessário para acessar este recurso.");
+        alert("Acesso expirado ou restrito ao Plano PRO.");
       }, []);
       return <Navigate to="/" replace />;
     }
@@ -1781,11 +1797,15 @@ export default function App() {
     return <>{children}</>;
   };
 
+  const hasAcesso = userPlan === "pro" || (trialDays !== null && (trialDays as number) > 0);
+
   return (
     <Router>
       <Routes>
         <Route path="/" element={<HomePage user={user} userPlan={userPlan} trialDays={trialDays} />} />
-        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+        <Route path="/login" element={
+          (user && hasAcesso) ? <Navigate to="/dashboard" replace /> : <LoginPage />
+        } />
         <Route path="/dashboard" element={
           <ProtectedRoute requirePro>
             <DashboardPage 

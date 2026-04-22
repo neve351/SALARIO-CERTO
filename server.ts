@@ -152,6 +152,37 @@ async function startServer() {
     }
   });
 
+  // API Route: Kiwify Webhook (Payment integration)
+  app.post("/api/webhook/kiwify", async (req, res) => {
+    const data = req.body;
+    
+    // Log completo para depuração
+    console.log("Webhook Kiwify recebido:", JSON.stringify(data, null, 2));
+
+    try {
+      // Ajusta conforme o padrão da Kiwify
+      if (data.status === "paid" && db) {
+        const email = data.customer?.email;
+
+        if (email) {
+          await db.collection("usuarios").doc(email).set({
+            plano: "pro",
+            origem: "kiwify",
+            atualizado: Date.now(),
+            ativo: true
+          }, { merge: true });
+          
+          console.log("Usuário liberado:", email);
+        }
+      }
+      
+      res.status(200).json({ ok: true });
+    } catch (error: any) {
+      console.error("Erro no webhook Kiwify:", error.message);
+      res.status(200).json({ ok: false, error: error.message });
+    }
+  });
+
   // API Route: Hotmart Webhook (Payment integration)
   app.post("/api/webhook/hotmart", async (req, res) => {
     const data = req.body;
