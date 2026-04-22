@@ -76,10 +76,54 @@ const calculateIRPF = (base: number) => {
 
 function LoginPage() {
   const [email, setEmail] = useState("");
+  const [telefone, setTelefone] = useState("");
   const [password, setPassword] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isCodeSent, setIsCodeSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  const handleSendCode = async (e?: any) => {
+    if (e) e.preventDefault();
+    if (!email || !telefone) {
+      setError("Por favor, preencha seu e-mail e WhatsApp.");
+      return;
+    }
+    
+    setLoading(true);
+    setError("");
+    
+    try {
+      const res = await fetch("/api/send-code", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ email, telefone })
+      });
+
+      const data = await res.json();
+      
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        
+        // Alerta de teste (o código vem na resposta apenas em desenvolvimento)
+        if (data.code) {
+          alert("Código enviado: " + data.code);
+        } else {
+          alert("Código enviado!");
+        }
+
+        setIsCodeSent(true);
+      } else {
+        throw new Error(data.error || "Erro ao enviar código");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError("Erro ao enviar código. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e?: any) => {
     if (e) e.preventDefault();
@@ -87,19 +131,33 @@ function LoginPage() {
     setError("");
     
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // Navegando para /app conforme sugerido no script fornecido
-      navigate("/app");
+      const res = await fetch("/api/verify-code", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ codigo: password, sessionId })
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        alert("Acesso liberado!");
+        // Autenticação técnica interna
+        await signInWithEmailAndPassword(auth, email, "123456");
+        navigate("/app");
+      } else {
+        alert("Código inválido");
+        setError("Código inválido");
+      }
     } catch (err) {
-      setError("Acesso não liberado. Verifique seu login.");
       console.error(err);
+      setError("Erro ao validar código.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans text-white">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[20%] left-[10%] w-[30%] h-[30%] bg-purple-600/10 blur-[100px] rounded-full" />
       </div>
@@ -109,70 +167,100 @@ function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-sm"
       >
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-xl shadow-purple-500/20 mb-4 relative">
-              <Zap className="w-8 h-8 fill-current" />
-              <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-1 border-2 border-slate-950">
-                <ShieldCheck className="w-3 h-3 text-white" />
+          <div className="bg-white text-slate-950 p-6 sm:p-8 rounded-[32px] shadow-2xl relative overflow-hidden">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-purple-700 rounded-2xl flex items-center justify-center text-white mx-auto shadow-xl shadow-purple-900/20 mb-4 relative">
+                <Zap className="w-8 h-8 fill-current" />
               </div>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900">
+                {isCodeSent ? "Verificar Código" : "Ativar Teste Grátis"}
+              </h1>
+              <p className="text-slate-500 text-sm">
+                {isCodeSent ? `Digite o código enviado para seu WhatsApp` : "Acesso imediato por 7 dias"}
+              </p>
             </div>
-            <h1 className="text-2xl font-black text-white tracking-tight">Bem-vindo de volta</h1>
-            <p className="text-slate-400 text-sm">Acesse seu painel com segurança</p>
-          </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Seu E-mail</label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input 
-                type="email" 
-                placeholder="exemplo@email.com" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
-                required
-              />
+          {!isCodeSent ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Seu E-mail</label>
+                <input 
+                  id="email" 
+                  type="email" 
+                  placeholder="Seu email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-purple-600 transition-colors"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Seu WhatsApp</label>
+                <input 
+                  id="telefone" 
+                  type="tel" 
+                  placeholder="Ex: 11999999999" 
+                  value={telefone}
+                  onChange={(e) => setTelefone(e.target.value)}
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-purple-600 transition-colors"
+                  required
+                />
+              </div>
+
+              <button 
+                onClick={handleSendCode}
+                disabled={loading}
+                className="bg-purple-700 w-full p-4 rounded-2xl font-black text-white hover:bg-purple-600 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-900/20 disabled:opacity-50"
+              >
+                {loading ? "Processando..." : "Receber código"}
+              </button>
+
+              <p className="text-center text-slate-400 text-[10px] sm:text-xs italic">
+                O código de ativação será enviado via SMS/WhatsApp.
+              </p>
             </div>
-          </div>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 text-center block">Código de Ativação</label>
+                <input 
+                  id="codigo"
+                  type="text" 
+                  placeholder="Digite o código" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-4 text-slate-900 mt-2 bg-slate-100 border border-slate-200 rounded-2xl focus:outline-none font-black text-center tracking-widest text-2xl"
+                  required
+                />
+              </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Senha de Acesso</label>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input 
-                type="password" 
-                placeholder="••••••••" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
-                required
-              />
+              <button 
+                type="submit"
+                disabled={loading}
+                className="bg-green-500 w-full p-4 mt-2 rounded-2xl font-black text-white hover:bg-green-400 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-green-500/20 disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Ativar acesso"}
+              </button>
+
+              <button 
+                type="button"
+                onClick={() => setIsCodeSent(false)}
+                className="w-full text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-slate-600 transition-colors"
+              >
+                ← Voltar para E-mail e Telefone
+              </button>
+            </form>
+          )}
+
+          {error && (
+            <div className="mt-4 p-3 bg-red-50 rounded-xl border border-red-100">
+              <p className="text-red-500 text-xs text-center font-bold uppercase tracking-widest">
+                {error}
+              </p>
             </div>
-          </div>
-
-          <button 
-            type="submit"
-            disabled={loading}
-            className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-purple-600/20 disabled:opacity-50 mt-4 active:scale-[0.98]"
-          >
-            {loading ? "Entrando..." : "Entrar"}
-          </button>
-        </form>
-
-        {error && (
-          <motion.p 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }}
-            className="text-red-400 text-sm mt-6 text-center font-medium bg-red-400/10 py-3 rounded-xl border border-red-400/20"
-          >
-            {error}
-          </motion.p>
-        )}
-
-        <p className="text-center mt-8 text-slate-500 text-sm">
-          Não tem acesso? <a href="https://wa.me/55SEUNUMERO?text=Quero%20calcular%20meu%20salário" target="_blank" rel="noopener noreferrer" className="text-purple-400 font-bold hover:underline">Falar com suporte</a>
-        </p>
+          )}
+        </div>
       </motion.div>
     </div>
   );

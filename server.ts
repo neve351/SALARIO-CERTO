@@ -3,9 +3,28 @@ import admin from "firebase-admin";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import twilio from 'twilio';
+import { v4 as uuidv4 } from 'uuid';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Store for verification sessions
+let sessions: Record<string, any> = {};
+
+// Lazy Twilio initialization helper
+let twilioClient: twilio.Twilio | null = null;
+function getTwilio() {
+  if (!twilioClient) {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    if (!sid || !token) {
+      throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
+    }
+    twilioClient = twilio(sid, token);
+  }
+  return twilioClient;
+}
 
 async function startServer() {
   const app = express();
@@ -47,6 +66,151 @@ async function startServer() {
   }
 
   app.use(express.json());
+
+  // API Route: Send Verification Code
+  app.post("/api/send-code", async (req, res) => {
+    const { email, telefone } = req.body;
+
+    const codigo = Math.floor(100000 + Math.random() * 900000);
+    const sessionId = uuidv4();
+
+    sessions[sessionId] = {
+      email,
+      telefone,
+      codigo,
+      criado: Date.now()
+    };
+
+    console.log("Código:", codigo); // teste
+
+    // Integração com Twilio (opcional, mantendo o que já tínhamos)
+    try {
+      const client = getTwilio();
+      const from = process.env.TWILIO_PHONE_NUMBER || '+123456';
+      const phone = telefone.startsWith('+') ? telefone : `+55${telefone}`;
+      
+      await client.messages.create({
+        body: `Salário Certo: Seu código de acesso é ${codigo}`,
+        from: from,
+        to: phone
+      });
+    } catch (e) {
+      console.warn("Aviso Twilio:", e.message);
+    }
+
+    res.json({ 
+      sessionId, 
+      code: process.env.NODE_ENV !== 'production' ? codigo : undefined 
+    });
+  });
+
+  // API Route: Verify Code
+  app.post("/api/verify-code", async (req, res) => {
+    const { codigo, sessionId } = req.body;
+    
+    const session = sessions[sessionId];
+
+    if (!session || session.codigo.toString() !== codigo.toString()) {
+      return res.json({ ok: false });
+    }
+
+    const email = session.email;
+
+    try {
+      if (appInstance && db) {
+        // cria usuário no Firebase Auth
+        try {
+          await admin.auth(appInstance).createUser({
+            email,
+            password: "123456"
+          });
+        } catch (authErr: any) {
+          // Se o usuário já existir, apenas ignoramos o erro de criação e prosseguimos
+          if (authErr.code !== 'auth/email-already-exists') {
+            console.error("Erro ao criar usuário Auth:", authErr);
+          }
+        }
+
+        // salva trial no Firestore
+        await db.collection("usuarios").doc(email).set({
+          plano: "trial",
+          trial_inicio: Date.now(),
+          ativo: true,
+          email: email,
+          telefone: session.telefone
+        }, { merge: true });
+
+        console.log("Usuário criado e trial ativado para:", email);
+      }
+      
+      delete sessions[sessionId];
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Erro na verificação/ativação:", error);
+      res.status(500).json({ ok: false, error: "Erro interno no servidor" });
+    }
+  });
+
+  // API Route: Cakto Webhook (Payment integration)
+  app.post("/api/webhook/cakto", async (req, res) => {
+    const data = req.body;
+    console.log("Webhook Cakto recebido:", data.status, data.customer?.email);
+
+    try {
+      // Ajusta conforme o padrão da Cakto
+      if (data.status === "paid" && db) {
+        const email = data.customer?.email;
+
+        if (email) {
+          await db.collection("usuarios").doc(email).set({
+            plano: "pro",
+            origem: "cakto",
+            atualizado: Date.now(),
+            ativo: true // Garante que o usuário esteja ativo ao pagar
+          }, { merge: true });
+          
+          console.log(`Usuário ${email} atualizado para PRO via Cakto`);
+        }
+      }
+      
+      res.status(200).json({ ok: true });
+    } catch (error: any) {
+      console.error("Erro no webhook Cakto:", error.message);
+      // Sempre retornamos 200 para webhooks para evitar retentativas infinitas do provedor se o erro for lógico
+      res.status(200).json({ ok: false, error: error.message });
+    }
+  });
+
+  // API Route: Send SMS Code (Twilio - Legacy for compatibility)
+  app.post("/api/send-sms", async (req, res) => {
+    const { phone, code } = req.body;
+    
+    if (!phone || !code) {
+      return res.status(400).json({ error: "Telefone e código são obrigatórios" });
+    }
+
+    try {
+      const client = getTwilio();
+      const from = process.env.TWILIO_PHONE_NUMBER || '+123456';
+      
+      const message = await client.messages.create({
+        body: `Salário Certo: Seu código de acesso é ${code}`,
+        from: from,
+        to: phone
+      });
+
+      console.log("SMS enviado com sucesso:", message.sid);
+      res.json({ success: true, messageSid: message.sid });
+    } catch (error: any) {
+      console.error("Erro ao enviar SMS:", error.message);
+      // Return 200 with success:false if it's a config issue so the UI can fallback to alert/console
+      res.status(200).json({ 
+        success: false, 
+        error: "Twilio não configurado ou erro no envio",
+        message: error.message 
+      });
+    }
+  });
 
   // API Route: List Users (Admin only - simplified for now)
   app.get("/api/users", async (req, res) => {
