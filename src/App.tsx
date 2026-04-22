@@ -1281,12 +1281,12 @@ function DashboardPage({
                   Ver Guia <TrendingUp className="w-2.5 h-2.5" />
                 </button>
                 <a 
-                  href="https://pay.hotmart.com/SEULINK" 
+                  href="https://app.cakto.com.br/checkout-builder/858949" 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="bg-blue-500 hover:bg-blue-400 text-white text-[9px] sm:text-[10px] font-black uppercase px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  className="bg-purple-600 hover:bg-purple-500 text-white text-[9px] sm:text-[10px] font-black uppercase px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5"
                 >
-                  <Lock className="w-2.5 h-2.5" /> Garantir Versão PRO
+                  <Lock className="w-2.5 h-2.5" /> Liberar Acesso PRO
                 </a>
               </div>
             </div>
@@ -1313,22 +1313,35 @@ function TrialCountdown({ daysRemaining }: { daysRemaining: number }) {
   const isLastDays = daysRemaining <= 2;
 
   return (
-    <div 
-      id="trialBox" 
-      style={{ opacity, backgroundColor: isLastDays ? '#ef4444' : '#facc15', color: isLastDays ? 'white' : 'black' }}
-      className={`p-3 rounded-xl mt-4 text-center font-bold text-xs sm:text-sm shadow-lg transition-all duration-300 ${isLastDays ? 'shadow-red-400/20' : 'shadow-yellow-400/20'}`}
-    >
-      {isLastDays ? (
-        <>
-          ⏳ Seu teste está acabando…<br />
-          <span className="text-[10px] opacity-80 uppercase tracking-widest">Quer continuar usando?</span><br />
-          👉 Apenas R$ 9,90/mês
-        </>
-      ) : (
-        <>
-          👷‍♂️ Você ganhou 7 dias grátis!<br />
-          <span className="text-[10px] opacity-80 uppercase tracking-widest">Faltam {Math.ceil(daysRemaining)} dias</span>
-        </>
+    <div className="space-y-3">
+      <div 
+        id="trialBox" 
+        style={{ opacity, backgroundColor: isLastDays ? '#ef4444' : '#facc15', color: isLastDays ? 'white' : 'black' }}
+        className={`p-3 rounded-xl mt-4 text-center font-bold text-xs sm:text-sm shadow-lg transition-all duration-300 ${isLastDays ? 'shadow-red-400/20' : 'shadow-yellow-400/20'}`}
+      >
+        {isLastDays ? (
+          <>
+            ⏳ Seu teste está acabando…<br />
+            <span className="text-[10px] opacity-80 uppercase tracking-widest">Quer continuar usando?</span><br />
+            👉 Apenas R$ 9,90/mês
+          </>
+        ) : (
+          <>
+            👷‍♂️ Você ganhou 7 dias grátis!<br />
+            <span className="text-[10px] opacity-80 uppercase tracking-widest">Faltam {Math.ceil(daysRemaining)} dias</span>
+          </>
+        )}
+      </div>
+
+      {isLastDays && (
+        <a 
+          href="https://app.cakto.com.br/checkout-builder/858949" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-4 rounded-xl block text-center font-black uppercase tracking-widest text-xs shadow-xl shadow-purple-600/20 transition-all transform active:scale-95"
+        >
+          Liberar Acesso PRO
+        </a>
       )}
     </div>
   );

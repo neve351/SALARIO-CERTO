@@ -66,6 +66,7 @@ async function startServer() {
   }
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   // API Route: Send Verification Code
   app.post("/api/send-code", async (req, res) => {
@@ -151,10 +152,46 @@ async function startServer() {
     }
   });
 
+  // API Route: Hotmart Webhook (Payment integration)
+  app.post("/api/webhook/hotmart", async (req, res) => {
+    const data = req.body;
+    
+    // Log completo para depuração
+    console.log("Webhook Hotmart recebido:", JSON.stringify(data, null, 2));
+
+    try {
+      // Padrão Hotmart: event === "PURCHASE_APPROVED" ou status === "APPROVED"
+      // Note: Recomenda-se validar o hottok (token de segurança) para produção
+      const isApproved = data.event === "PURCHASE_APPROVED" || data.status === "APPROVED";
+      
+      if (isApproved && db) {
+        const email = data.data?.buyer?.email || data.email;
+
+        if (email) {
+          await db.collection("usuarios").doc(email).set({
+            plano: "pro",
+            origem: "hotmart",
+            atualizado: Date.now(),
+            ativo: true
+          }, { merge: true });
+          
+          console.log(`Usuário ${email} atualizado para PRO via Hotmart`);
+        }
+      }
+      
+      res.status(200).json({ ok: true });
+    } catch (error: any) {
+      console.error("Erro no webhook Hotmart:", error.message);
+      res.status(200).json({ ok: false, error: error.message });
+    }
+  });
+
   // API Route: Cakto Webhook (Payment integration)
   app.post("/api/webhook/cakto", async (req, res) => {
     const data = req.body;
-    console.log("Webhook Cakto recebido:", data.status, data.customer?.email);
+    
+    // Log completo para depuração conforme solicitado
+    console.log("Webhook Cakto recebido:", JSON.stringify(data, null, 2));
 
     try {
       // Ajusta conforme o padrão da Cakto
@@ -166,7 +203,7 @@ async function startServer() {
             plano: "pro",
             origem: "cakto",
             atualizado: Date.now(),
-            ativo: true // Garante que o usuário esteja ativo ao pagar
+            ativo: true 
           }, { merge: true });
           
           console.log(`Usuário ${email} atualizado para PRO via Cakto`);
@@ -176,7 +213,6 @@ async function startServer() {
       res.status(200).json({ ok: true });
     } catch (error: any) {
       console.error("Erro no webhook Cakto:", error.message);
-      // Sempre retornamos 200 para webhooks para evitar retentativas infinitas do provedor se o erro for lógico
       res.status(200).json({ ok: false, error: error.message });
     }
   });
