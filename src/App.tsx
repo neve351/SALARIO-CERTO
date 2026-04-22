@@ -1602,7 +1602,6 @@ function HomePage({ user, userPlan, trialDays }: { user: User | null, userPlan: 
               <div className="text-4xl font-black text-white mb-2">R$ 9,90<span className="text-sm font-medium text-slate-500">/mês</span></div>
               <p className="text-slate-400 text-sm mb-6">Seu controle total garantido</p>
               <ul className="space-y-3 text-sm text-slate-200 mb-8">
-                <li className="flex items-center gap-2 justify-center font-bold">💎 Acesso Vitalício Prioritário</li>
                 <li className="flex items-center gap-2 justify-center font-bold">📈 Histórico e Evolução</li>
                 <li className="flex items-center gap-2 justify-center font-bold">🤖 IA Corretora de Salário</li>
               </ul>

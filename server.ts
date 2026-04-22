@@ -165,8 +165,7 @@ async function startServer() {
           plano: "trial",
           trial_inicio: Date.now(),
           ativo: true,
-          email: email,
-          telefone: session.telefone
+          email: email
         }, { merge: true });
 
         console.log("Usuário criado e trial ativado para:", email);
