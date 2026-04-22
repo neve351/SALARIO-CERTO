@@ -86,8 +86,8 @@ function LoginPage() {
 
   const handleSendCode = async (e?: any) => {
     if (e) e.preventDefault();
-    if (!email || !telefone) {
-      setError("Por favor, preencha seu e-mail e WhatsApp.");
+    if (!email) {
+      setError("Por favor, preencha seu e-mail.");
       return;
     }
     
@@ -98,7 +98,7 @@ function LoginPage() {
       const res = await fetch("/api/send-code", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ email, telefone })
+        body: JSON.stringify({ email })
       });
 
       const data = await res.json();
@@ -176,7 +176,7 @@ function LoginPage() {
                 {isCodeSent ? "Verificar Código" : "Ativar Teste Grátis"}
               </h1>
               <p className="text-slate-500 text-sm">
-                {isCodeSent ? `Digite o código enviado para seu WhatsApp` : "Acesso imediato por 7 dias"}
+                {isCodeSent ? `Digite o código enviado para seu E-mail` : "Acesso imediato por 7 dias"}
               </p>
             </div>
 
@@ -187,22 +187,9 @@ function LoginPage() {
                 <input 
                   id="email" 
                   type="email" 
-                  placeholder="Seu email" 
+                  placeholder="Seu email principal" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-purple-600 transition-colors"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Seu WhatsApp</label>
-                <input 
-                  id="telefone" 
-                  type="tel" 
-                  placeholder="Ex: 11999999999" 
-                  value={telefone}
-                  onChange={(e) => setTelefone(e.target.value)}
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-purple-600 transition-colors"
                   required
                 />
@@ -217,7 +204,7 @@ function LoginPage() {
               </button>
 
               <p className="text-center text-slate-400 text-[10px] sm:text-xs italic">
-                O código de ativação será enviado via SMS/WhatsApp.
+                O código de ativação será enviado via E-mail.
               </p>
             </div>
           ) : (
@@ -246,9 +233,9 @@ function LoginPage() {
               <button 
                 type="button"
                 onClick={() => setIsCodeSent(false)}
-                className="w-full text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-slate-600 transition-colors"
+                className="w-full text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors"
               >
-                ← Voltar para E-mail e Telefone
+                ← Voltar para E-mail
               </button>
             </form>
           )}
