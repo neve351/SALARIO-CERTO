@@ -3,13 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Salário CLT App</title>
+    <title>Salário Certo</title>
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#6d28d9" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").then((reg) => {
+            console.log("Service Worker registrado!", reg);
+          }).catch((err) => {
+            console.log("Erro ao registrar SW:", err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
 

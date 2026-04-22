@@ -7,15 +7,22 @@ import {
 import { useState, useMemo, useEffect, useCallback, type ReactNode, type ChangeEvent } from "react";
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, type User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, addDoc, query, orderBy, onSnapshot, limit, serverTimestamp, type Timestamp } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, AreaChart, Area } from "recharts";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // --- Gemini Setup ---
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
-// --- Components ---
+interface HistoryItem {
+  id?: string;
+  grossSalary: number;
+  netSalary: number;
+  extra: number;
+  night: number;
+  date: any;
+}
 
 function FeatureCard({ icon, title, description }: { icon: ReactNode, title: string, description: string }) {
   return (
@@ -81,7 +88,8 @@ function LoginPage() {
     
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/dashboard");
+      // Navegando para /app conforme sugerido no script fornecido
+      navigate("/app");
     } catch (err) {
       setError("Acesso não liberado. Verifique seu login.");
       console.error(err);
@@ -148,7 +156,7 @@ function LoginPage() {
             disabled={loading}
             className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-purple-600/20 disabled:opacity-50 mt-4 active:scale-[0.98]"
           >
-            {loading ? "Autenticando..." : "Entrar no App"}
+            {loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
 
@@ -308,7 +316,10 @@ function SalaryCalculatorPage({
   vaCost, setVaCost, 
   vrCost, setVrCost, 
   monthsWorked, setMonthsWorked,
-  results 
+  results,
+  isSimpleMode, setIsSimpleMode,
+  simpleExtra, setSimpleExtra,
+  simpleNight, setSimpleNight
 }: any) {
   const [aiTip, setAiTip] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -341,6 +352,21 @@ function SalaryCalculatorPage({
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Simulador PRO</h2>
           <p className="text-slate-500 text-xs sm:text-sm italic">Cálculos automáticos baseados na CLT 2026.</p>
         </motion.div>
+
+        <div className="flex bg-slate-200/50 p-1 rounded-2xl border border-slate-200 mb-6 sm:mb-8 mx-2 sm:mx-0">
+          <button 
+            onClick={() => setIsSimpleMode(false)}
+            className={`flex-1 py-3 sm:py-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${!isSimpleMode ? 'bg-white text-purple-600 shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <ShieldCheck className="w-4 h-4" /> CLT Completo
+          </button>
+          <button 
+            onClick={() => setIsSimpleMode(true)}
+            className={`flex-1 py-3 sm:py-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${isSimpleMode ? 'bg-white text-purple-600 shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <Zap className="w-4 h-4" /> Calculadora Rápida
+          </button>
+        </div>
 
         {/* Resultado Principal Card */}
         <div className="bg-slate-950 text-white p-6 sm:p-8 rounded-[32px] sm:rounded-[40px] shadow-2xl relative overflow-hidden group border border-white/5 mx-2 sm:mx-0">
@@ -390,38 +416,65 @@ function SalaryCalculatorPage({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-4 border-t border-slate-50">
-              <div className="space-y-1.5">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Extras 70%</label>
-                <input 
-                  type="number" 
-                  value={he70Hours}
-                  onChange={(e) => setHe70Hours(Number(e.target.value))}
-                  className="w-full p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base"
-                  placeholder="Hrs"
-                />
+            {isSimpleMode ? (
+              <div className="space-y-4 pt-4 border-t border-slate-50">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono italic">💰 Horas Extra 70% (EM REAIS)</label>
+                  <input 
+                    type="number" 
+                    value={simpleExtra}
+                    onChange={(e) => setSimpleExtra(Number(e.target.value))}
+                    className="w-full p-2.5 sm:p-3 bg-purple-50 rounded-xl border border-purple-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base text-purple-900"
+                    placeholder="R$ 0,00"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono italic">🌙 Adicional Noturno (EM REAIS)</label>
+                  <input 
+                    type="number" 
+                    value={simpleNight}
+                    onChange={(e) => setSimpleNight(Number(e.target.value))}
+                    className="w-full p-2.5 sm:p-3 bg-purple-50 rounded-xl border border-purple-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base text-purple-900"
+                    placeholder="R$ 0,00"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Extras 100%</label>
-                <input 
-                  type="number" 
-                  value={he100Hours}
-                  onChange={(e) => setHe100Hours(Number(e.target.value))}
-                  className="w-full p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base"
-                  placeholder="Hrs"
-                />
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-4 border-t border-slate-50">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Extras 70%</label>
+                    <input 
+                      type="number" 
+                      value={he70Hours}
+                      onChange={(e) => setHe70Hours(Number(e.target.value))}
+                      className="w-full p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base"
+                      placeholder="Hrs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Extras 100%</label>
+                    <input 
+                      type="number" 
+                      value={he100Hours}
+                      onChange={(e) => setHe100Hours(Number(e.target.value))}
+                      className="w-full p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base"
+                      placeholder="Hrs"
+                    />
+                  </div>
+                </div>
 
-            <div className="space-y-1.5">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Adicional Noturno (Hrs)</label>
-                <input 
-                  type="number" 
-                  value={nightHours}
-                  onChange={(e) => setNightHours(Number(e.target.value))}
-                  className="w-full p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base"
-                />
-            </div>
+                <div className="space-y-1.5">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Adicional Noturno (Hrs)</label>
+                    <input 
+                      type="number" 
+                      value={nightHours}
+                      onChange={(e) => setNightHours(Number(e.target.value))}
+                      className="w-full p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold focus:border-purple-300 outline-none text-sm sm:text-base"
+                    />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Descontos de Benefícios (Smart Mode) */}
@@ -554,20 +607,44 @@ function evolucaoChartData() {
   ];
 }
 
-function EvolucaoPage({ results }: any) {
+function EvolucaoPage({ results, user }: { results: any, user: User | null }) {
   const navigate = useNavigate();
-  
-  const data = useMemo(() => {
-    const net = results.netSalary;
-    return [
-      { month: 'Out', value: net * 0.95 },
-      { month: 'Nov', value: net * 0.98 },
-      { month: 'Dez', value: net * 1.8 }, // Simulação 13o
-      { month: 'Jan', value: net * 1.01 },
-      { month: 'Fev', value: net * 1.02 },
-      { month: 'Mar', value: net }, // Mês Atual (Simulado)
-    ];
-  }, [results.netSalary]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, `users/${user.uid}/history`),
+      orderBy("date", "asc"),
+      limit(10)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as HistoryItem[];
+      setHistory(items);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const chartData = useMemo(() => {
+    if (history.length === 0) return [];
+    return history.map(item => ({
+      date: item.date?.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' }) || '...',
+      valor: item.netSalary
+    }));
+  }, [history]);
+
+  const stats = useMemo(() => {
+    if (history.length === 0) return { avg: 0, record: 0 };
+    const values = history.map(h => h.netSalary);
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const record = Math.max(...values);
+    return { avg, record };
+  }, [history]);
 
   return (
     <InternalLayout activeTab="evolucao">
@@ -577,70 +654,110 @@ function EvolucaoPage({ results }: any) {
           animate={{ opacity: 1, y: 0 }}
           className="px-2"
         >
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Crescimento</h2>
-          <p className="text-slate-500 text-xs sm:text-sm">Projeção automática baseada no seu simulador.</p>
+          <div className="flex justify-between items-end">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Evolução Salarial</h2>
+              <p className="text-slate-500 text-xs sm:text-sm">Seu progresso real baseado em cálculos salvos.</p>
+            </div>
+            <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" /> CLT Ativo
+            </div>
+          </div>
         </motion.div>
 
-        <div className="bg-white p-5 sm:p-6 rounded-[28px] sm:rounded-[32px] shadow-sm border border-slate-100 mx-2 sm:mx-0">
-           <div className="h-48 sm:h-64 w-full">
+        <div className="bg-white p-5 sm:p-8 rounded-[36px] shadow-xl shadow-slate-200/50 border border-slate-100 mx-2 sm:mx-0 overflow-hidden relative">
+           <div className="h-56 sm:h-72 w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={75}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {data.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={`rgba(109, 40, 217, ${0.4 + (index * 0.1)})`} stroke="none" />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="date" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 'bold' }}
                 />
-              </PieChart>
+                <YAxis 
+                  hide={true}
+                  domain={['dataMin - 100', 'dataMax + 100']}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: '16px', 
+                    border: 'none', 
+                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+                    fontSize: '12px',
+                    fontWeight: 'bold'
+                  }}
+                  formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR")}`}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="valor" 
+                  stroke="#6366f1" 
+                  strokeWidth={4} 
+                  fillOpacity={1} 
+                  fill="url(#colorVal)" 
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex justify-between items-center mt-3 sm:mt-4 px-2">
+          
+          <div className="flex justify-between items-center mt-6 sm:mt-8 px-2">
             <div className="text-center flex-1">
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 block uppercase">Média</span>
-              <span className="font-bold text-slate-900 font-mono text-xs sm:text-base">R$ 1.216,33</span>
+              <span className="text-[9px] sm:text-[10px] font-sans font-bold text-slate-400 block uppercase tracking-widest mb-1">Ganho Médio</span>
+              <span className="font-black text-slate-900 text-sm sm:text-lg">R$ {stats.avg.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
             </div>
-            <div className="w-px h-5 sm:h-6 bg-slate-100 mx-2 sm:mx-4" />
+            <div className="w-px h-8 bg-slate-100 mx-2 sm:mx-4" />
             <div className="text-center flex-1">
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 block uppercase">Recorde</span>
-              <span className="font-bold text-purple-600 font-mono text-xs sm:text-base">R$ 1.600,00</span>
+              <span className="text-[9px] sm:text-[10px] font-sans font-bold text-slate-400 block uppercase tracking-widest mb-1">Maior Recebido</span>
+              <span className="font-black text-indigo-600 text-sm sm:text-lg">R$ {stats.record.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
             </div>
           </div>
         </div>
 
-        <section className="space-y-3 sm:space-y-4 px-2 sm:px-0">
-          <h3 className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-widest pl-2">Ganhos Mensais</h3>
-          <div className="space-y-2.5 sm:space-y-3">
-            {data.slice().reverse().map((item, idx) => (
+        <section className="space-y-4 px-2 sm:px-0">
+          <div className="flex justify-between items-center px-2">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-widest">Registros de Holerite</h3>
+            <span className="text-[10px] font-black text-indigo-500">{history.length} salvos</span>
+          </div>
+          
+          <div className="space-y-3">
+            {history.slice().reverse().map((item, idx) => (
               <motion.div 
-                key={item.month}
+                key={item.id}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 flex justify-between items-center group hover:border-purple-300 transition-colors"
+                transition={{ delay: idx * 0.05 }}
+                className="bg-white p-4 rounded-3xl border border-slate-100 flex justify-between items-center group hover:bg-slate-50 hover:border-indigo-200 transition-all cursor-default"
               >
-                <div className="flex items-center gap-2.5 sm:gap-3">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-purple-600 transition-colors">
-                    <PieChartIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                <div className="flex items-center gap-4">
+                  <div className="w-11 h-11 bg-slate-50 group-hover:bg-indigo-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-all duration-300">
+                    <Calculator className="w-5 h-5" />
                   </div>
-                  <span className="font-bold text-slate-700 text-sm sm:text-base">{item.month} / 2026</span>
+                  <div>
+                    <h4 className="font-black text-slate-800 text-sm">{item.date?.toDate().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) || 'Calculado'}</h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Bruto: R$ {item.grossSalary.toLocaleString('pt-BR')}</p>
+                  </div>
                 </div>
                 <div className="text-right">
-                  <span className="block font-bold text-slate-900 text-sm sm:text-base">R$ {item.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  <span className="text-[9px] sm:text-[10px] text-emerald-500 font-bold uppercase tracking-tighter">Concluído</span>
+                  <p className="font-black text-indigo-600 text-sm sm:text-base">R$ {item.netSalary.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[9px] font-bold text-slate-300 uppercase">Líquido</p>
                 </div>
               </motion.div>
             ))}
+
+            {history.length === 0 && !loading && (
+              <div className="py-20 text-center opacity-40">
+                <PieChartIcon className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500">Comece a salvar seus cálculos para ver aqui.</p>
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -674,6 +791,50 @@ function DashboardPage({
     });
     return () => unsubscribe();
   }, [navigate]);
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, `users/${user.uid}/history`),
+      orderBy("date", "desc"),
+      limit(5)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as HistoryItem[];
+      setHistory(items);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const saveHistory = async () => {
+    if (!user) return;
+    setIsSaving(true);
+    try {
+      await addDoc(collection(db, `users/${user.uid}/history`), {
+        grossSalary,
+        netSalary: results.netSalary,
+        extra: he70Total + he100Total,
+        night: nightTotal,
+        date: serverTimestamp()
+      });
+      // Also update overall stats (simplified for now)
+      await setDoc(doc(db, "users", user.uid), {
+        email: user.email,
+        lastUpdated: serverTimestamp(),
+        currentSalary: results.netSalary
+      }, { merge: true });
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -741,9 +902,9 @@ function DashboardPage({
   const salario_liquido = results.netSalary;
 
   const dashboardChartData = [
-    { name: "Base", value: grossSalary, color: "#6D28D9" },
-    { name: "Extras", value: he70Total + he100Total, color: "#9333ea" },
-    { name: "Noturno", value: nightTotal, color: "#c084fc" },
+    { name: "Salário Base", value: grossSalary, color: "#6366f1" },
+    { name: "Horas Extras", value: he70Total + he100Total, color: "#8b5cf6" },
+    { name: "Adc. Noturno", value: nightTotal, color: "#ec4899" },
   ];
 
   return (
@@ -753,7 +914,7 @@ function DashboardPage({
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          style={{ background: 'linear-gradient(135deg, #7B2CBF 0%, #3C096C 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
           className="m-4 sm:m-6 mt-4 p-6 sm:p-8 rounded-[36px] sm:rounded-[42px] shadow-2xl shadow-purple-600/30 relative overflow-hidden group"
         >
           <div className="relative z-10">
@@ -763,7 +924,7 @@ function DashboardPage({
                   <Sparkles className="w-5 h-5 fill-current" />
                 </div>
                 <div className="text-left">
-                  <p className="text-purple-100 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-70">Acesso Aluno</p>
+                  <p className="text-white/70 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest">Acesso PRO</p>
                   <p className="text-white text-xs sm:text-sm font-bold truncate max-w-[140px]">{user.email?.split('@')[0]}</p>
                 </div>
               </div>
@@ -773,74 +934,130 @@ function DashboardPage({
                   <input type="file" accept=".pdf,image/*" onChange={handleFileUpload} className="hidden" />
                   <div className="bg-white/10 hover:bg-white/20 backdrop-blur-md px-3 py-2 rounded-xl text-white text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 border border-white/10 transition-all">
                     {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-                    Ler Holerite
+                    Importar Holerite
                   </div>
                 </label>
                 <button 
-                  onClick={() => setIsEditing(!isEditing)}
+                  onClick={() => {
+                    if (isEditing) {
+                      saveHistory();
+                      setIsEditing(false);
+                    } else {
+                      setIsEditing(true);
+                    }
+                  }}
                   className={`flex-1 sm:flex-none px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 border transition-all ${
                     isEditing 
-                    ? 'bg-purple-500 border-purple-400 text-white' 
+                    ? 'bg-emerald-500 border-emerald-400 text-white' 
                     : 'bg-white/10 border-white/10 text-white hover:bg-white/20'
                   }`}
                 >
-                  {isEditing ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
-                  {isEditing ? 'Pronto' : 'Editar'}
+                  {isEditing ? (isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />) : <Edit3 className="w-3.5 h-3.5" />}
+                  {isEditing ? (isSaving ? 'Salvando...' : 'Salvar') : 'Editar'}
                 </button>
               </div>
             </div>
 
-            <p className="text-purple-100 text-xs sm:text-sm font-medium opacity-80 mb-1">Seu Salário Líquido Estimado</p>
+            <p className="text-white/80 text-xs sm:text-sm font-medium mb-1">Seu Salário Líquido Mensal</p>
             <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight leading-none mb-3 sm:mb-4">
               R$ {salario_liquido.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h1>
             <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-400/20 border border-emerald-400/20 rounded-full text-emerald-200 text-[9px] font-bold uppercase tracking-wider">
               <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              {isEditing ? 'Editando Agora' : 'Atualizado'}
+              {isEditing ? 'Calculando Tempo Real' : 'Monitoramento CLT'}
             </div>
           </div>
           <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:rotate-12 transition-transform hidden sm:block">
-            <TrendingUp className="w-32 h-32 text-white" />
-          </div>
         </motion.div>
 
         <main className="px-4 sm:px-6 space-y-6 sm:space-y-8">
           <section>
             <div className="flex justify-between items-center mb-3 sm:mb-4 px-1">
               <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
-                <PieChartIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600" />
-                Resumo da Carteira
+                <PieChartIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
+                Distribuição de Ganhos
               </h3>
             </div>
-            <div className="bg-white p-5 sm:p-6 rounded-[28px] sm:rounded-[32px] shadow-sm border border-slate-100 grid grid-cols-2 gap-4 sm:gap-8 items-center">
-              <div className="h-28 sm:h-32 w-full">
+            <div className="bg-white p-6 sm:p-8 rounded-[36px] shadow-sm border border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-8 items-center">
+              <div className="h-48 sm:h-56 w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={dashboardChartData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={30}
-                      outerRadius={45}
-                      paddingAngle={5}
+                      innerRadius={55}
+                      outerRadius={75}
+                      paddingAngle={8}
                       dataKey="value"
+                      stroke="none"
                     >
                       {dashboardChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                        <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        borderRadius: '16px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+                        fontSize: '12px',
+                        fontWeight: 'bold'
+                      }} 
+                    />
                   </PieChart>
                 </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Bruto</span>
+                  <span className="text-sm font-black text-slate-900">R$ {results.totalEarnings.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
+                </div>
               </div>
-              <div className="space-y-2.5 sm:space-y-3">
+              <div className="grid grid-cols-1 gap-4">
                 {dashboardChartData.map(item => (
-                  <div key={item.name} className="flex flex-col">
-                    <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{item.name}</span>
-                    <span className="text-xs sm:text-sm font-black text-slate-800">R$ {item.value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  <div key={item.name} className="flex items-center gap-4 bg-slate-50/50 p-3 rounded-2xl border border-slate-100">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
+                    <div className="flex-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.name}</p>
+                      <p className="text-sm sm:text-base font-black text-slate-800">R$ {item.value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-slate-400">{((item.value / results.totalEarnings) * 100).toFixed(0)}%</p>
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+          </section>
+
+          <section>
+            <div className="flex justify-between items-center mb-4 px-1">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                Histórico Recente
+              </h3>
+            </div>
+            <div className="space-y-3">
+              {history.length > 0 ? history.map((item) => (
+                <div key={item.id} className="bg-white p-4 rounded-3xl border border-slate-100 flex justify-between items-center group hover:bg-slate-50 transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
+                      <Calculator className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Cálculo em {item.date?.toDate().toLocaleDateString('pt-BR') || 'Hoje'}</p>
+                      <p className="text-sm font-black text-slate-800">R$ {item.netSalary.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[9px] font-black py-1 px-2 bg-emerald-50 text-emerald-600 rounded-full inline-block uppercase">Processado</div>
+                  </div>
+                </div>
+              )) : (
+                <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-[36px] text-center">
+                  <PieChartIcon className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">Nenhum cálculo salvo ainda.<br/>Salve seus dados para ver a evolução.</p>
+                </div>
+              )}
             </div>
           </section>
 
@@ -968,12 +1185,22 @@ function DashboardPage({
             <div className="relative z-10 flex-1 text-center sm:text-left">
               <p className="text-blue-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.2em] mb-1.5 sm:mb-2 italic">Planejamento PRO</p>
               <h4 className="text-xs sm:text-sm font-bold mb-2 sm:mb-3 leading-tight tracking-tight">Sugestão: Invista R$ {(salario_liquido * 0.1).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} este mês.</h4>
-              <button 
-                onClick={() => navigate("/evolucao")}
-                className="text-[9px] sm:text-[10px] font-black uppercase text-white/50 hover:text-white transition-colors flex items-center justify-center sm:justify-start gap-1 mx-auto sm:mx-0"
-              >
-                Ver Guia <TrendingUp className="w-2.5 h-2.5" />
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button 
+                  onClick={() => navigate("/evolucao")}
+                  className="text-[9px] sm:text-[10px] font-black uppercase text-white/50 hover:text-white transition-colors flex items-center justify-center sm:justify-start gap-1"
+                >
+                  Ver Guia <TrendingUp className="w-2.5 h-2.5" />
+                </button>
+                <a 
+                  href="https://pay.hotmart.com/SEULINK" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="bg-blue-500 hover:bg-blue-400 text-white text-[9px] sm:text-[10px] font-black uppercase px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Lock className="w-2.5 h-2.5" /> Garantir Versão PRO
+                </a>
+              </div>
             </div>
             <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl hidden sm:flex items-center justify-center text-blue-400 border border-white/10 flex-shrink-0 animate-pulse">
               <Sparkles className="w-6 h-6 sm:w-8 sm:h-8" />
@@ -1022,43 +1249,44 @@ function HomePage() {
             O Controle Total em Suas Mãos
           </div>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-white tracking-tight mb-4 sm:mb-6">
-            App <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 font-black">Salário Certo</span>
+            💰 Descubra quanto você <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 font-black">realmente ganha</span>
           </h1>
-          <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto mb-8 sm:mb-10 leading-relaxed px-4">
-            A solução definitiva para calcular seu salário líquido e <span className="text-white font-semibold">planejar seu futuro financeiro</span> com total precisão.
+          <p className="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto mb-8 sm:mb-10 leading-relaxed px-4">
+            A maioria dos trabalhadores recebe errado e nem sabe…
           </p>
+          
+          <div className="flex flex-col items-center justify-center gap-4 mb-10">
+            <div className="flex -space-x-2">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="w-8 h-8 rounded-full border-2 border-slate-950 bg-slate-800 flex items-center justify-center overflow-hidden">
+                  <img src={`https://picsum.photos/seed/user${i}/100/100`} alt="User" referrerPolicy="no-referrer" />
+                </div>
+              ))}
+            </div>
+            <p className="text-sm sm:text-base text-green-400 font-bold">
+              ✔ Mais de 1.000 trabalhadores já usaram
+            </p>
+          </div>
 
           <div className="bg-slate-900/80 border border-slate-700/50 p-6 sm:p-8 rounded-[36px] sm:rounded-[40px] max-w-lg mx-4 sm:mx-auto backdrop-blur-md shadow-2xl relative overflow-hidden group">
             <div className="absolute -top-24 -left-24 w-48 h-48 bg-purple-600/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700" />
             
-            <div className="relative z-10 space-y-6">
-              <div className="text-center space-y-2">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Acesso Imediato</p>
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-emerald-400 text-xs sm:text-sm font-bold tracking-tight">Simulador Disponível para Teste</span>
-                </div>
-              </div>
+            <div className="relative z-10 space-y-4">
+              <button 
+                onClick={() => navigate("/calculator")}
+                className="w-full bg-white text-purple-900 font-black py-4 sm:py-5 rounded-xl flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-xl text-sm sm:text-base outline-none"
+              >
+                Testar Simulador Grátis
+              </button>
 
-              <div className="grid gap-3 sm:gap-4">
-                <button 
-                  onClick={() => navigate("/calculator")}
-                  className="w-full bg-white text-slate-950 font-black py-4 sm:py-5 rounded-[20px] sm:rounded-[24px] flex items-center justify-center gap-2.5 sm:gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-xl text-sm sm:text-base outline-none"
-                >
-                  <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 font-bold" />
-                  Testar Simulador Grátis
-                </button>
-
-                <a 
-                  href="https://wa.me/55SEUNUMERO?text=Quero%20calcular%20meu%20salário"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 sm:py-5 rounded-[20px] sm:rounded-[24px] flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-600/20 text-sm sm:text-base"
-                >
-                  Liberar Acesso PRO (CLT 2026)
-                  <Zap className="w-4 h-4 sm:w-5 sm:h-5 fill-current ml-1" />
-                </a>
-              </div>
+              <a 
+                href="https://pay.hotmart.com/SEULINK"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-4 sm:py-5 rounded-xl flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-600/20 text-sm sm:text-base no-underline"
+              >
+                Liberar Acesso PRO
+              </a>
 
               <p className="text-center text-slate-500 text-[10px] sm:text-xs font-medium italic">
                 Sem necessidade de cadastro para o teste.
@@ -1094,6 +1322,33 @@ function HomePage() {
 }
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [userPlan, setUserPlan] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser && currentUser.email) {
+        try {
+          const userDoc = await getDoc(doc(db, "usuarios", currentUser.email));
+          if (userDoc.exists()) {
+            setUserPlan(userDoc.data()?.plano || "free");
+          } else {
+            setUserPlan("free");
+          }
+        } catch (error) {
+          console.error("Erro ao carregar plano:", error);
+          setUserPlan("free");
+        }
+      } else {
+        setUserPlan(null);
+      }
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [grossSalary, setGrossSalary] = useState<number>(1000.00);
   const [he70Hours, setHe70Hours] = useState<number>(12);
   const [he100Hours, setHe100Hours] = useState<number>(0);
@@ -1105,8 +1360,27 @@ export default function App() {
   const [vrCost, setVrCost] = useState<number>(0); // VR can be zero or part of VA
 
   const [monthsWorked, setMonthsWorked] = useState<number>(7);
+  const [isSimpleMode, setIsSimpleMode] = useState(false);
+  const [simpleExtra, setSimpleExtra] = useState<number>(0);
+  const [simpleNight, setSimpleNight] = useState<number>(0);
 
   const results = useMemo(() => {
+    if (isSimpleMode) {
+      const bruto = grossSalary + simpleExtra + simpleNight;
+      const totalEarnings = bruto;
+      const inss = Math.round(bruto * 0.08 * 100) / 100; // Simplified 8% as per user snippet
+      const irpf = 0;
+      const totalBenefitsDiscount = 0;
+      const netSalary = Math.round((bruto - inss) * 100) / 100;
+      
+      return {
+        he70Total: simpleExtra, he100Total: 0, nightTotal: simpleNight, dsrTotal: 0, totalEarnings,
+        inss, irpf, netSalary, monthlyFGTS: bruto * 0.08, accruedFGTS: (bruto * 0.08) * monthsWorked,
+        avisoPrevio: bruto, decimoTerceiroProp: (bruto / 12) * (monthsWorked % 12 || 12), feriasProp: 0,
+        vtCalcDiscount: 0, totalBenefitsDiscount: 0
+      };
+    }
+
     const hourlyRate = grossSalary / 220;
     const he70Total = Math.round(he70Hours * (hourlyRate * 1.7) * 100) / 100;
     const he100Total = Math.round(he100Hours * (hourlyRate * 2.0) * 100) / 100;
@@ -1144,42 +1418,76 @@ export default function App() {
       avisoPrevio, decimoTerceiroProp, feriasProp,
       vtCalcDiscount, totalBenefitsDiscount
     };
-  }, [grossSalary, he70Hours, he100Hours, nightHours, vtCost, vaCost, vrCost, monthsWorked]);
+  }, [grossSalary, he70Hours, he100Hours, nightHours, vtCost, vaCost, vrCost, monthsWorked, isSimpleMode, simpleExtra, simpleNight]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+      </div>
+    );
+  }
+
+  const ProtectedRoute = ({ children, requirePro = false }: { children: ReactNode, requirePro?: boolean }) => {
+    if (!user) return <Navigate to="/login" replace />;
+    
+    if (requirePro && userPlan !== "pro") {
+      useEffect(() => {
+        alert("Plano PRO necessário para acessar este recurso.");
+      }, []);
+      return <Navigate to="/" replace />;
+    }
+    
+    return <>{children}</>;
+  };
 
   return (
     <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
         <Route path="/dashboard" element={
-          <DashboardPage 
-            results={results} 
-            grossSalary={grossSalary} setGrossSalary={setGrossSalary}
-            he70Hours={he70Hours} setHe70Hours={setHe70Hours}
-            he100Hours={he100Hours} setHe100Hours={setHe100Hours}
-            nightHours={nightHours} setNightHours={setNightHours}
-            vtCost={vtCost} setVtCost={setVtCost}
-            vaCost={vaCost} setVaCost={setVaCost}
-            vrCost={vrCost} setVrCost={setVrCost}
-            nightTotal={results.nightTotal}
-            he70Total={results.he70Total}
-            he100Total={results.he100Total}
-          />
+          <ProtectedRoute requirePro>
+            <DashboardPage 
+              results={results} 
+              grossSalary={grossSalary} setGrossSalary={setGrossSalary}
+              he70Hours={he70Hours} setHe70Hours={setHe70Hours}
+              he100Hours={he100Hours} setHe100Hours={setHe100Hours}
+              nightHours={nightHours} setNightHours={setNightHours}
+              vtCost={vtCost} setVtCost={setVtCost}
+              vaCost={vaCost} setVaCost={setVaCost}
+              vrCost={vrCost} setVrCost={setVrCost}
+              nightTotal={results.nightTotal}
+              he70Total={results.he70Total}
+              he100Total={results.he100Total}
+            />
+          </ProtectedRoute>
         } />
         <Route path="/calculator" element={
-          <SalaryCalculatorPage 
-            grossSalary={grossSalary} setGrossSalary={setGrossSalary}
-            he70Hours={he70Hours} setHe70Hours={setHe70Hours}
-            he100Hours={he100Hours} setHe100Hours={setHe100Hours}
-            nightHours={nightHours} setNightHours={setNightHours}
-            vtCost={vtCost} setVtCost={setVtCost}
-            vaCost={vaCost} setVaCost={setVaCost}
-            vrCost={vrCost} setVrCost={setVrCost}
-            monthsWorked={monthsWorked} setMonthsWorked={setMonthsWorked}
-            results={results}
-          />
+          <ProtectedRoute requirePro>
+            <SalaryCalculatorPage 
+              grossSalary={grossSalary} setGrossSalary={setGrossSalary}
+              he70Hours={he70Hours} setHe70Hours={setHe70Hours}
+              he100Hours={he100Hours} setHe100Hours={setHe100Hours}
+              nightHours={nightHours} setNightHours={setNightHours}
+              vtCost={vtCost} setVtCost={setVtCost}
+              vaCost={vaCost} setVaCost={setVaCost}
+              vrCost={vrCost} setVrCost={setVrCost}
+              monthsWorked={monthsWorked} setMonthsWorked={setMonthsWorked}
+              results={results}
+              isSimpleMode={isSimpleMode} setIsSimpleMode={setIsSimpleMode}
+              simpleExtra={simpleExtra} setSimpleExtra={setSimpleExtra}
+              simpleNight={simpleNight} setSimpleNight={setSimpleNight}
+            />
+          </ProtectedRoute>
         } />
-        <Route path="/evolucao" element={<EvolucaoPage results={results} />} />
+        <Route path="/evolucao" element={
+          <ProtectedRoute requirePro>
+            <EvolucaoPage results={results} user={user} />
+          </ProtectedRoute>
+        } />
+        <Route path="/historico.html" element={<Navigate to="/evolucao" replace />} />
+        <Route path="/app" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

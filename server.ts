@@ -53,45 +53,43 @@ async function startServer() {
     const data = req.body;
 
     if (data.status === "APPROVED" && serviceAccount && db && appInstance) {
-      const email = data.buyer?.email;
-      if (!email) {
-        return res.status(400).send("Email not found in payload");
-      }
-
-      try {
-        // Generate random 8-character password
-        const senha = Math.random().toString(36).slice(-8);
-
-        try {
-          // Attempt to create user in Firebase Auth
-          await admin.auth(appInstance).createUser({
-            email: email,
-            password: senha
-          });
-          console.log("Usuário criado no Auth:", email, senha);
-        } catch (authError: any) {
-          if (authError.code === 'auth/email-already-exists') {
-            console.log("Usuário já existe no Auth, pulando criação:", email);
-          } else {
-            throw authError;
-          }
+        const email = data.buyer?.email;
+        if (!email) {
+          return res.status(400).send("Email não encontrado no payload");
         }
 
-        // Activate user in Firestore
-        await db.collection("usuarios").doc(email).set({
-          ativo: true,
-          criado_em: new Date()
-        });
+        try {
+          // Attempt to create user in Firebase Auth with the requested default password
+          try {
+            await admin.auth(appInstance).createUser({
+              email: email,
+              password: "123456"
+            });
+            console.log("Usuário criado no Auth:", email);
+          } catch (authError: any) {
+            if (authError.code === 'auth/email-already-exists') {
+              console.log("Usuário já existe no Auth, atualizando status no Firestore:", email);
+            } else {
+              throw authError;
+            }
+          }
 
-        console.log("Usuário ativado no Firestore:", email);
-        res.status(200).json({ status: "ok", message: "User processed successfully" });
-      } catch (error) {
-        console.error("Error in webhook processing:", error);
-        res.status(500).json({ error: "Firebase error during processing" });
+          // Register/Update User in Firestore as requested
+          await db.collection("usuarios").doc(email).set({
+            ativo: true,
+            plano: "pro",
+            atualizado_em: new Date()
+          }, { merge: true });
+
+          console.log("Usuário promovido a PRO no Firestore:", email);
+          res.status(200).json({ status: "success", message: "Acesso PRO liberado" });
+        } catch (error) {
+          console.error("Erro no processamento do webhook:", error);
+          res.status(500).json({ error: "Erro interno ao processar acesso" });
+        }
+      } else {
+        res.status(200).send("Status não é APPROVED, nenhuma ação tomada.");
       }
-    } else {
-      res.send("ok");
-    }
   });
 
   // Vite middleware for development
