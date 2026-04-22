@@ -101,25 +101,33 @@ function LoginPage() {
         body: JSON.stringify({ email })
       });
 
+      if (!res.ok) {
+        throw new Error(`Erro no servidor: ${res.status}`);
+      }
+
       const data = await res.json();
       
       if (data.sessionId) {
         setSessionId(data.sessionId);
         
-        // Alerta de teste (o código vem na resposta apenas em desenvolvimento)
+        // Alerta inteligente: Se o email falhou ou não existe SMTP, mostramos o código no alerta para não travar
         if (data.code) {
-          alert("Código enviado: " + data.code);
+          if (!data.emailSent) {
+            alert("🛠️ Modo Desenvolvedor: Como o E-mail não foi configurado nos Segredos, use este código para entrar: " + data.code);
+          } else {
+            alert("Código enviado para o seu e-mail!");
+          }
         } else {
-          alert("Código enviado!");
+          alert("Código enviado! Verifique sua caixa de entrada.");
         }
 
         setIsCodeSent(true);
       } else {
-        throw new Error(data.error || "Erro ao enviar código");
+        throw new Error(data.error || "Erro ao gerar sessão");
       }
     } catch (err: any) {
-      console.error(err);
-      setError("Erro ao enviar código. Tente novamente.");
+      console.error("Erro no envio:", err);
+      setError(`Erro: ${err.message || "Tente novamente"}`);
     } finally {
       setLoading(false);
     }

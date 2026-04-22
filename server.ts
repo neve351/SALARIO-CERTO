@@ -34,14 +34,20 @@ function getMailTransporter() {
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
     if (!user || !pass) {
-      throw new Error('SMTP_USER and SMTP_PASS are required for email delivery');
+      console.warn('Configuração de e-mail (SMTP_USER/SMTP_PASS) ausente. E-mails não serão enviados.');
+      return null;
     }
-    mailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_PORT === '465',
-      auth: { user, pass }
-    });
+    try {
+      mailTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_PORT === '465',
+        auth: { user, pass }
+      });
+    } catch (err) {
+      console.error('Erro ao criar transportador de e-mail:', err);
+      return null;
+    }
   }
   return mailTransporter;
 }
@@ -104,32 +110,38 @@ async function startServer() {
     console.log("Código gerado para e-mail:", codigo);
 
     // Integração com E-mail (Nodemailer)
+    let emailSent = false;
     try {
       const transporter = getMailTransporter();
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || 'Salário Certo <noreply@salariocerto.com>',
-        to: email,
-        subject: `Seu código de acesso: ${codigo}`,
-        text: `Olá! Seu código de ativação para o Salário Certo é: ${codigo}. Este código expira em 10 minutos.`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; text-align: center;">
-            <h2 style="color: #4f46e5; margin-bottom: 24px;">Salário Certo</h2>
-            <p style="color: #475569; font-size: 16px; margin-bottom: 32px;">Olá! Use o código abaixo para ativar seus 7 dias de teste grátis:</p>
-            <div style="background: #f8fafc; padding: 24px; border-radius: 12px; font-size: 32px; font-weight: 800; color: #1e293b; letter-spacing: 4px; margin-bottom: 32px;">
-              ${codigo}
+      if (transporter) {
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || 'Salário Certo <noreply@salariocerto.com>',
+          to: email,
+          subject: `Seu código de acesso: ${codigo}`,
+          text: `Olá! Seu código de ativação para o Salário Certo é: ${codigo}. Este código expira em 10 minutos.`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; text-align: center;">
+              <h2 style="color: #4f46e5; margin-bottom: 24px;">Salário Certo</h2>
+              <p style="color: #475569; font-size: 16px; margin-bottom: 32px;">Olá! Use o código abaixo para ativar seus 7 dias de teste grátis:</p>
+              <div style="background: #f8fafc; padding: 24px; border-radius: 12px; font-size: 32px; font-weight: 800; color: #1e293b; letter-spacing: 4px; margin-bottom: 32px;">
+                ${codigo}
+              </div>
+              <p style="color: #94a3b8; font-size: 12px;">Este código é válido por 10 minutos. Se você não solicitou este acesso, ignore este e-mail.</p>
             </div>
-            <p style="color: #94a3b8; font-size: 12px;">Este código é válido por 10 minutos. Se você não solicitou este acesso, ignore este e-mail.</p>
-          </div>
-        `
-      });
-      console.log(`E-mail enviado para ${email}`);
+          `
+        });
+        console.log(`E-mail enviado para ${email}`);
+        emailSent = true;
+      }
     } catch (e: any) {
-      console.warn("Aviso E-mail:", e.message);
+      console.error("Erro ao enviar e-mail:", e.message);
     }
 
     res.json({ 
       sessionId, 
-      code: process.env.NODE_ENV !== 'production' ? codigo : undefined 
+      emailSent,
+      // Em ambiente de teste/preview, sempre retornamos o código para não travar o usuário
+      code: codigo 
     });
   });
 
