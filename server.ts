@@ -10,8 +10,9 @@ import { v4 as uuidv4 } from 'uuid';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Store for verification sessions
+// Store for verification sessions and magic links
 let sessions: Record<string, any> = {};
+let magicLinks: Record<string, any> = {};
 
 // Lazy Twilio initialization helper
 let twilioClient: twilio.Twilio | null = null;
@@ -143,6 +144,102 @@ async function startServer() {
       // Em ambiente de teste/preview, sempre retornamos o código para não travar o usuário
       code: codigo 
     });
+  });
+
+  // API Route: Send MAGIC LINK
+  app.post("/api/send-link", async (req, res) => {
+    const { email } = req.body;
+    const token = uuidv4();
+    const appUrl = process.env.APP_URL || `https://${req.get('host')}`;
+
+    magicLinks[token] = {
+      email,
+      criado: Date.now()
+    };
+
+    const loginUrl = `${appUrl}/login?token=${token}`;
+    console.log("Link de acesso gerado:", loginUrl);
+
+    let emailSent = false;
+    try {
+      const transporter = getMailTransporter();
+      if (transporter) {
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || 'Salário Certo <noreply@salariocerto.com>',
+          to: email,
+          subject: 'Seu Link de Acesso - Salário Certo',
+          text: `Olá! Clique no link para acessar o simulador: ${loginUrl}`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; text-align: center;">
+              <h2 style="color: #4f46e5; margin-bottom: 24px;">Salário Certo</h2>
+              <p style="color: #475569; font-size: 16px; margin-bottom: 32px;">Olá! Use o botão abaixo para acessar sua conta e ativar seus 7 dias de teste grátis:</p>
+              <a href="${loginUrl}" style="background: #4f46e5; color: white; padding: 16px 32px; border-radius: 12px; font-size: 16px; font-weight: 800; text-decoration: none; display: inline-block; margin-bottom: 32px;">
+                ACESSAR SIMULADOR AGORA
+              </a>
+              <p style="color: #94a3b8; font-size: 12px;">Se o botão não funcionar, copie e cole este link no seu navegador:<br>${loginUrl}</p>
+            </div>
+          `
+        });
+        emailSent = true;
+      }
+    } catch (e: any) {
+      console.error("Erro ao enviar e-mail link:", e.message);
+    }
+
+    res.json({ ok: true, emailSent, link: process.env.NODE_ENV !== 'production' ? loginUrl : undefined });
+  });
+
+  // API Route: Verify Magic Link
+  app.post("/api/verify-link", async (req, res) => {
+    const { token } = req.body;
+    const linkData = magicLinks[token];
+
+    if (!linkData) {
+      return res.json({ ok: false, error: "Link inválido ou expirado" });
+    }
+
+    // Valida expiração (30 min)
+    if (Date.now() - linkData.criado > 1000 * 60 * 30) {
+      delete magicLinks[token];
+      return res.json({ ok: false, error: "Link expirado" });
+    }
+
+    const email = linkData.email;
+
+    try {
+      if (appInstance && db) {
+        // cria usuário no Firebase Auth se não existir
+        try {
+          await admin.auth(appInstance).createUser({
+            email,
+            password: "123456"
+          });
+        } catch (authErr: any) {
+          if (authErr.code !== 'auth/email-already-exists') {
+            console.error("Erro ao criar usuário Auth via Link:", authErr);
+          }
+        }
+
+        // ativa acesso se for novo
+        const userDoc = await db.collection("usuarios").doc(email).get();
+        if (!userDoc.exists()) {
+          await db.collection("usuarios").doc(email).set({
+            plano: "trial",
+            trial_inicio: Date.now(),
+            ativo: true,
+            email: email
+          });
+        }
+
+        delete magicLinks[token];
+        res.json({ ok: true, email });
+      } else {
+        res.json({ ok: false, error: "Serviço indisponível" });
+      }
+    } catch (error) {
+      console.error("Erro ao verificar link:", error);
+      res.json({ ok: false });
+    }
   });
 
   // API Route: Verify Code

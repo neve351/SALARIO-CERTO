@@ -5,7 +5,7 @@ import {
   FileUp, Edit3, Save, Loader2, X
 } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback, type ReactNode, type ChangeEvent } from "react";
-import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, useSearchParams } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, addDoc, query, orderBy, onSnapshot, limit, serverTimestamp, type Timestamp } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
@@ -76,15 +76,49 @@ const calculateIRPF = (base: number) => {
 
 function LoginPage() {
   const [email, setEmail] = useState("");
-  const [telefone, setTelefone] = useState("");
-  const [password, setPassword] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [isCodeSent, setIsCodeSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isSent, setIsSent] = useState(false);
   const [error, setError] = useState("");
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const handleSendCode = async (e?: any) => {
+  // Auto-login logic if token present
+  useEffect(() => {
+    const token = searchParams.get("token");
+    if (token) {
+      handleVerifyLink(token);
+    }
+  }, [searchParams]);
+
+  const handleVerifyLink = async (token: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/verify-link", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ token })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Autenticação técnica interna
+        await signInWithEmailAndPassword(auth, data.email, "123456");
+        alert("Acesso liberado com sucesso!");
+        navigate("/dashboard");
+      } else {
+        setError(data.error || "Link inválido ou expirado.");
+        alert(data.error || "Link inválido.");
+        navigate("/login");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Erro ao validar acesso.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendLink = async (e?: any) => {
     if (e) e.preventDefault();
     if (!email) {
       setError("Por favor, preencha seu e-mail.");
@@ -95,70 +129,30 @@ function LoginPage() {
     setError("");
     
     try {
-      const res = await fetch("/api/send-code", {
+      const res = await fetch("/api/send-link", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ email })
       });
 
-      if (!res.ok) {
-        throw new Error(`Erro no servidor: ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error("Erro no servidor");
       const data = await res.json();
       
-      if (data.sessionId) {
-        setSessionId(data.sessionId);
-        
-        // Alerta inteligente: Se o email falhou ou não existe SMTP, mostramos o código no alerta para não travar
-        if (data.code) {
+      if (data.ok) {
+        if (data.link) {
+          console.log("🛠️ Link gerado (Modo Dev):", data.link);
           if (!data.emailSent) {
-            alert("🛠️ Modo Desenvolvedor: Como o E-mail não foi configurado nos Segredos, use este código para entrar: " + data.code);
-          } else {
-            alert("Código enviado para o seu e-mail!");
+            alert("🛠️ Modo Desenvolvedor: E-mail não configurado. Use este link:\n" + data.link);
           }
-        } else {
-          alert("Código enviado! Verifique sua caixa de entrada.");
         }
-
-        setIsCodeSent(true);
+        setIsSent(true);
+        alert("Verifique seu e-mail para acessar!");
       } else {
-        throw new Error(data.error || "Erro ao gerar sessão");
+        throw new Error(data.error || "Erro ao gerar link");
       }
     } catch (err: any) {
-      console.error("Erro no envio:", err);
-      setError(`Erro: ${err.message || "Tente novamente"}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogin = async (e?: any) => {
-    if (e) e.preventDefault();
-    setLoading(true);
-    setError("");
-    
-    try {
-      const res = await fetch("/api/verify-code", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ codigo: password, sessionId })
-      });
-
-      const data = await res.json();
-
-      if (data.ok) {
-        alert("Acesso liberado!");
-        // Autenticação técnica interna
-        await signInWithEmailAndPassword(auth, email, "123456");
-        navigate("/app");
-      } else {
-        alert("Código inválido");
-        setError("Código inválido");
-      }
-    } catch (err) {
       console.error(err);
-      setError("Erro ao validar código.");
+      setError("Erro ao enviar link. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -175,77 +169,84 @@ function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-sm"
       >
-          <div className="bg-white text-slate-950 p-6 sm:p-8 rounded-[32px] shadow-2xl relative overflow-hidden">
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-purple-700 rounded-2xl flex items-center justify-center text-white mx-auto shadow-xl shadow-purple-900/20 mb-4 relative">
-                <Zap className="w-8 h-8 fill-current" />
-              </div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-900">
-                {isCodeSent ? "Verificar Código" : "Ativar Teste Grátis"}
-              </h1>
-              <p className="text-slate-500 text-sm">
-                {isCodeSent ? `Digite o código enviado para seu E-mail` : "Acesso imediato por 7 dias"}
-              </p>
+        <div className="bg-white text-slate-950 p-6 sm:p-8 rounded-[32px] shadow-2xl relative overflow-hidden">
+          {loading && searchParams.get("token") ? (
+            <div className="text-center py-10 space-y-4">
+              <Loader2 className="w-12 h-12 text-purple-600 animate-spin mx-auto" />
+              <h2 className="text-xl font-black text-slate-900">Validando Acesso...</h2>
+              <p className="text-sm text-slate-500 font-medium">Prepare-se para o seu simulador!</p>
             </div>
-
-          {!isCodeSent ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Seu E-mail</label>
-                <input 
-                  id="email" 
-                  type="email" 
-                  placeholder="Seu email principal" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-purple-600 transition-colors"
-                  required
-                />
+          ) : !isSent ? (
+            <>
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-purple-700 rounded-2xl flex items-center justify-center text-white mx-auto shadow-xl shadow-purple-900/20 mb-4 relative">
+                  <Zap className="w-8 h-8 fill-current" />
+                </div>
+                <h1 className="text-2xl font-black tracking-tight text-slate-900">
+                  Acessar Simulador
+                </h1>
+                <p className="text-slate-500 text-sm">
+                  Acesso imediato ao Salário Certo
+                </p>
               </div>
 
-              <button 
-                onClick={handleSendCode}
-                disabled={loading}
-                className="bg-purple-700 w-full p-4 rounded-2xl font-black text-white hover:bg-purple-600 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-900/20 disabled:opacity-50"
-              >
-                {loading ? "Processando..." : "Receber código"}
-              </button>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Seu E-mail</label>
+                  <input 
+                    id="email" 
+                    type="email" 
+                    placeholder="Seu email principal" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-purple-600 transition-colors"
+                    required
+                  />
+                </div>
 
-              <p className="text-center text-slate-400 text-[10px] sm:text-xs italic">
-                O código de ativação será enviado via E-mail.
-              </p>
-            </div>
+                <button 
+                  onClick={handleSendLink}
+                  disabled={loading}
+                  className="bg-purple-700 w-full p-4 rounded-2xl font-black text-white hover:bg-purple-600 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-900/20 disabled:opacity-50"
+                >
+                  {loading ? "Processando..." : "Receber acesso"}
+                </button>
+
+                <p className="text-center text-slate-400 text-[10px] sm:text-xs italic">
+                  Você receberá um link mágico de acesso no seu e-mail.
+                </p>
+              </div>
+            </>
           ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 text-center block">Código de Ativação</label>
-                <input 
-                  id="codigo"
-                  type="text" 
-                  placeholder="Digite o código" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full p-4 text-slate-900 mt-2 bg-slate-100 border border-slate-200 rounded-2xl focus:outline-none font-black text-center tracking-widest text-2xl"
-                  required
-                />
+            <div className="text-center space-y-6 py-4">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-8 h-8" />
               </div>
-
+              <div className="space-y-4">
+                <p className="font-black text-slate-900">E-mail Enviado!</p>
+                <p className="text-sm text-slate-500">Enviamos um link de acesso para <b>{email}</b>. Clique no botão dentro do e-mail para entrar agora.</p>
+                
+                <a 
+                  href={
+                    email.includes("gmail.com") ? "https://mail.google.com" :
+                    email.includes("outlook.com") || email.includes("hotmail.com") ? "https://outlook.live.com" :
+                    email.includes("yahoo.com") ? "https://mail.yahoo.com" :
+                    "mailto:" + email
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full py-4 bg-purple-700 text-white rounded-2xl font-black text-sm no-underline hover:bg-purple-600 transition-colors shadow-lg shadow-purple-900/10"
+                >
+                  ACESSAR MEU E-MAIL
+                </a>
+              </div>
               <button 
-                type="submit"
-                disabled={loading}
-                className="bg-green-500 w-full p-4 mt-2 rounded-2xl font-black text-white hover:bg-green-400 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-green-500/20 disabled:opacity-50"
+                onClick={() => setIsSent(false)}
+                className="text-purple-600 text-[10px] font-bold underline uppercase tracking-widest pt-4"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Ativar acesso"}
+                Tentar outro e-mail
               </button>
-
-              <button 
-                type="button"
-                onClick={() => setIsCodeSent(false)}
-                className="w-full text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors"
-              >
-                ← Voltar para E-mail
-              </button>
-            </form>
+            </div>
           )}
 
           {error && (
@@ -1656,10 +1657,12 @@ export default function App() {
   const [userPlan, setUserPlan] = useState<string | null>(null);
   const [trialDays, setTrialDays] = useState<number | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [planLoading, setPlanLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser && currentUser.email) {
+        setPlanLoading(true);
         try {
           const userDoc = await getDoc(doc(db, "usuarios", currentUser.email));
           if (userDoc.exists()) {
@@ -1685,10 +1688,13 @@ export default function App() {
           console.error("Erro ao carregar plano:", error);
           setUserPlan("free");
           setTrialDays(7);
+        } finally {
+          setPlanLoading(false);
         }
       } else {
         setUserPlan(null);
         setTrialDays(null);
+        setPlanLoading(false);
       }
       setUser(currentUser);
       setAuthLoading(false);
@@ -1776,15 +1782,20 @@ export default function App() {
   }
 
   const ProtectedRoute = ({ children, requirePro = false }: { children: ReactNode, requirePro?: boolean }) => {
+    if (authLoading || planLoading) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+        </div>
+      );
+    }
+    
     if (!user) return <Navigate to="/login" replace />;
     
     // Liberalize access: Allow PRO users OR users with remaining trial days
     const hasAcesso = userPlan === "pro" || (trialDays !== null && trialDays > 0);
 
     if (requirePro && !hasAcesso) {
-      useEffect(() => {
-        alert("Acesso expirado ou restrito ao Plano PRO.");
-      }, []);
       return <Navigate to="/" replace />;
     }
     
